@@ -59,9 +59,11 @@ graphiti_agent = Agent(
     - Use 💰 for cost information
     - Use ⚡ for electricity-related information
     - Use 📈 for comparisons and trends
+
+    IMPORTANT!! Ensure that all analogies are scaled based on the user's calculated power output. 
     
     Place emojis strategically to enhance understanding and engagement, but don't overuse them.
-    
+
     If you can't find the information needed to answer a question, be honest and say so.
     """,
     deps_type=GraphitiDependencies
