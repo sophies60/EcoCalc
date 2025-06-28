@@ -49,6 +49,18 @@ graphiti_agent = Agent(
     <p>Energy (kWh) = Power (W) × Time (hours) / 1000<br>= 150 W × 3 hours / 1000<br>= 0.45 kWh</p>
     
     Use <strong> for important values and calculations.
+
+    IMPORTANT: Please also use emojis for a more user-friendly and engaging experience. 
+
+        Please use emojis to enhance the user experience:
+    - Use 📊 for calculations and statistics
+    - Use 💡 for energy-related concepts
+    - Use 🏃‍♂️ for physical activity analogies
+    - Use 💰 for cost information
+    - Use ⚡ for electricity-related information
+    - Use 📈 for comparisons and trends
+    
+    Place emojis strategically to enhance understanding and engagement, but don't overuse them.
     
     If you can't find the information needed to answer a question, be honest and say so.
     """,
