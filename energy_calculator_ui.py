@@ -43,16 +43,28 @@ st.markdown("""
         width: 100%;
         margin-top: 0.5rem;
     }
-    .result-card {
+      .result-card {
         padding: 1rem;
         border-radius: 0.5rem;
-        background-color: #fff;
+        margin-bottom: 1rem;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+    }
+    .result-content {
         margin-top: 1rem;
         font-family: monospace;
         white-space: pre-wrap;
-        line-height: 1.2;
+        line-height: 1.0;  /* Reduced line height for compact display */
         font-size: 0.9rem;
+        margin-bottom: 0;  /* Remove extra bottom margin */
     }
+    p {
+        margin: 0.25rem 0;  /* Reduced paragraph spacing */
+    }
+    br {
+        margin: 0.25rem 0;  /* Reduced line break spacing */
+    }
+
     
     .result-section {
         margin: 0.5rem 0;
@@ -115,6 +127,47 @@ st.title("⚡ Energy Cost Calculator")
 
 # Create the form with widgets
 with st.form("energy_form"):
+    # City selection
+    city_options = [
+        "Select a City",
+        "New York City",
+        "Boston",
+        "Chicago",
+        "Los Angeles",
+        "San Francisco",
+        "Houston",
+        "Washington DC"
+    ]
+    
+    city = st.selectbox(
+        "Select Your City",
+        city_options,
+        key="city_selector",
+        index=0
+    )
+
+    # Custom rate input (always visible)
+    custom_rate = st.number_input(
+        "Custom Rate ($/kWh) (optional)",
+        min_value=0.0,
+        step=0.01,
+        key="custom_rate_input_1"
+    )
+    if custom_rate > 0:
+        st.write(f"Using custom rate: ${custom_rate}/kWh")
+        city = "Select a City"  # Clear city selection when custom rate is used
+    else:
+        city = "Select a City"  # Default city selection
+
+    # City selection (only visible if no custom rate)
+    if city == "Select a City" and custom_rate == 0:
+        city = st.selectbox(
+            "Select Your City",
+            city_options,
+            key="city_selector_1",
+            index=0
+        )
+
     # Appliance selection
     appliance = st.selectbox(
         "Select an Appliance",
@@ -143,7 +196,7 @@ with st.form("energy_form"):
     unit = st.selectbox(
         "Time Unit",
         ["hours/day", "minutes/day"],
-        key="time_unit",
+        key="time_unit_selector",
         index=0
     )
 
@@ -152,10 +205,21 @@ with st.form("energy_form"):
 
     if submitted:
         # Prepare the query using form values
-        query = f"""
-        I use my {appliance.lower()} for {time} {unit}. 
-        What is the energy consumption and cost? Please provide all 5 physical analogies.
-        """
+        if custom_rate > 0:  # If custom rate is entered
+            query = f"""
+            I use my {appliance.lower()} for {time} {unit} with electricity rate ${custom_rate}/kWh. 
+            What is the energy consumption and cost? Please provide all 5 physical analogies.
+            """
+        elif city != "Select a City":
+            query = f"""
+            I use my {appliance.lower()} for {time} {unit} in {city}. 
+            What is the energy consumption and cost? Please provide all 5 physical analogies.
+            """
+        else:
+            query = f"""
+            I use my {appliance.lower()} for {time} {unit}. 
+            What is the energy consumption and cost? Please provide all 5 physical analogies.
+            """
         
         # Initialize dependencies
         deps = GraphitiDependencies(graphiti_client=graphiti_client)
