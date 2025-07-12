@@ -30,7 +30,7 @@ load_dotenv()
 
 # Neo4j connection parameters
 # Make sure Neo4j Desktop is running with a local DBMS started
-neo4j_uri = os.environ.get('NEO4J_URI', 'neo4j://127.0.0.1:7687')
+neo4j_uri = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
 neo4j_user = os.environ.get('NEO4J_USER', 'neo4j')
 neo4j_password = os.environ.get('NEO4J_PASSWORD', 'password')
 
@@ -53,7 +53,9 @@ async def main():
 
     try:
         # Initialize the graph database with graphiti's indices. This only needs to be done once.
+        print("\nInitializing graph database...")
         await graphiti.build_indices_and_constraints()
+        print("Graph database initialized successfully!")
 
         #################################################
         # ADDING EPISODES
@@ -132,14 +134,42 @@ async def main():
                 'type': EpisodeType.text,
                 'description': 'Minute to second conversion',
             },
-
             # Cost information
             {
                 'content': '1kWh costs $0.23 in NYC',
                 'type': EpisodeType.text,
                 'description': 'NYC electricity cost',
             },
-
+            {
+                'content': '1kWh costs $0.28 in Boston',
+                'type': EpisodeType.text,
+                'description': 'Boston electricity cost',
+            },
+            {
+                'content': '1kWh costs $0.15 in Chicago',
+                'type': EpisodeType.text,
+                'description': 'Chicago electricity cost',
+            },
+            {
+                'content': '1kWh costs $0.29 in Los Angeles',
+                'type': EpisodeType.text,
+                'description': 'Los Angeles electricity cost',
+            },
+            {
+                'content': '1kWh costs $0.30 in San Francisco',
+                'type': EpisodeType.text,
+                'description': 'San Francisco electricity cost',
+            },
+            {
+                'content': '1kWh costs $0.15 in Houston',
+                'type': EpisodeType.text,
+                'description': 'Houston electricity cost',
+            },
+            {
+                'content': '1kWh costs $0.17 in Washington DC',
+                'type': EpisodeType.text,
+                'description': 'Washington DC electricity cost',
+            },
             # Energy analogies
             {
                 'content': '1kWh = Lifting 100kg 367m',
@@ -165,22 +195,48 @@ async def main():
                 'content': '1kWh = 3000 jumping jacks',
                 'type': EpisodeType.text,
                 'description': '1kWh physical analogy - jumping jacks',
-                'description': 'NYC electricity cost information',
             }
         ]
 
-        # Add episodes to the graph
+        # Add episodes to the graph with error handling
+        added_episodes = []
         for i, episode in enumerate(episodes):
-            await graphiti.add_episode(
-                name=f'Energy Calculator Episode {i}',
-                episode_body=episode['content']
-                if isinstance(episode['content'], str)
-                else json.dumps(episode['content']),
-                source=episode['type'],
-                source_description=episode['description'],
-                reference_time=datetime.now(timezone.utc),
-            )
-            print(f'Added episode: Energy Calculator Episode {i} ({episode["type"].value})')
+            try:
+                episode_name = f'Energy Calculator Episode {i}'
+                episode_type = EpisodeType.text  # Ensure we're using the correct enum value
+                
+                # Add episode with proper type handling
+                await graphiti.add_episode(
+                    name=episode_name,
+                    episode_body=episode['content']
+                    if isinstance(episode['content'], str)
+                    else json.dumps(episode['content']),
+                    source=episode_type,
+                    source_description=episode['description'],
+                    reference_time=datetime.now(timezone.utc),
+                )
+                added_episodes.append(episode_name)
+                print(f'Added episode: {episode_name} ({episode_type.value})')
+            except Exception as add_error:
+                logger.error(f'Error adding episode {i}: {str(add_error)}')
+                print(f'Error adding episode {i}: {str(add_error)}')
+                continue
+
+        # Verify episodes were added
+        if added_episodes:
+            print('\nVerifying episodes in graph...')
+            try:
+                # Verify at least one episode exists
+                verify_query = """
+                MATCH (n:Episode)
+                RETURN count(n)
+                """
+                result = await graphiti.driver.execute_query(verify_query)
+                episode_count = result[0][0]
+                print(f'Number of episodes in graph: {episode_count}')
+            except Exception as verify_error:
+                logger.error(f'Error verifying episodes: {str(verify_error)}')
+                print(f'Error verifying episodes: {str(verify_error)}')
 
         #################################################
         # BASIC SEARCH
@@ -191,9 +247,21 @@ async def main():
         # similarity and BM25 text retrieval.
         #################################################
 
+        # Verify episodes were added before search
+        if not added_episodes:
+            print('No episodes were successfully added. Skipping search.')
+            return
+
         # Perform a hybrid search combining semantic similarity and BM25 retrieval
         print("\nSearching for: 'Which appliance uses the most energy?'")
-        results = await graphiti.search('Which appliance uses the most energy?')
+        try:
+            results = await graphiti.search('Which appliance uses the most energy?')
+            if not results:
+                print("No results found in the search")
+        except Exception as search_error:
+            logger.error(f"Error during search: {str(search_error)}")
+            print(f"Error during search: {str(search_error)}")
+            results = []
 
         # Print search results
         print('\nSearch Results:')
@@ -205,39 +273,6 @@ async def main():
             if hasattr(result, 'invalid_at') and result.invalid_at:
                 print(f'Valid until: {result.invalid_at}')
             print('---')
-
-        #################################################
-        # CENTER NODE SEARCH
-        #################################################
-        # For more contextually relevant results, you can
-        # use a center node to rerank search results based
-        # on their graph distance to a specific node
-        #################################################
-
-        # Use the top search result's UUID as the center node for reranking
-        if results and len(results) > 0:
-            # Get the source node UUID from the top result
-            center_node_uuid = results[0].source_node_uuid
-
-            print('\nReranking search results based on graph distance:')
-            print(f'Using center node UUID: {center_node_uuid}')
-
-            reranked_results = await graphiti.search(
-                'Which appliance uses the most energy?', center_node_uuid=center_node_uuid
-            )
-
-            # Print reranked search results
-            print('\nReranked Search Results:')
-            for result in reranked_results:
-                print(f'UUID: {result.uuid}')
-                print(f'Fact: {result.fact}')
-                if hasattr(result, 'valid_at') and result.valid_at:
-                    print(f'Valid from: {result.valid_at}')
-                if hasattr(result, 'invalid_at') and result.invalid_at:
-                    print(f'Valid until: {result.invalid_at}')
-                print('---')
-        else:
-            print('No results found in the initial search to use as center node.')
 
         #################################################
         # NODE SEARCH USING SEARCH RECIPES
@@ -286,58 +321,44 @@ async def main():
             print('No results found')
 
         #################################################
-        # EXAMPLE QUERIES
+        # Perform a hybrid search combining semantic similarity and BM25 retrieval
+        print("\nSearching for: 'Which appliance uses the most energy?'")
+        try:
+            results = await graphiti.search('Which appliance uses the most energy?')
+            if not results:
+                print("No results found in the search")
+        except Exception as search_error:
+            logger.error(f"Error during search: {str(search_error)}")
+            print(f"Error during search: {str(search_error)}")
+            results = []
+
+        # Print search results
+        print('\nSearch Results:')
+        for result in results:
+            print(f'UUID: {result.uuid}')
+            print(f'Fact: {result.fact}')
+            if hasattr(result, 'valid_at') and result.valid_at:
+                print(f'Valid from: {result.valid_at}')
+            if hasattr(result, 'invalid_at') and result.invalid_at:
+                print(f'Valid until: {result.invalid_at}')
+            print('---')
+
+
+
+        #################################################
+        # CLEANUP
+        #################################################
+        # Always close the connection to Neo4j when
+        # finished to properly release resources
         #################################################
 
-        print("\nAppliance Energy Usage:")
-        for i, (appliance_name, properties) in enumerate(appliances.items()):
-            episode = await graphiti.get_episode_by_name(f'Energy Calculator Episode {i}')
-            if episode:
-                print(f"{appliance_name.capitalize()}: {episode.content}")
-
-        print("\nEnergy Unit Conversions:")
-        watt = await graphiti.get_node_by_label_and_name("Unit", "watt")
-        kilowatt = await graphiti.get_node_by_label_and_name("Unit", "kilowatt")
-        if watt and kilowatt:
-            relationship = await graphiti.get_relationship(
-                source=watt,
-                target=kilowatt,
-                relationship_type="CONVERTS_TO"
-            )
-            if relationship:
-                print(f"1 Watt = {relationship.properties['factor']} Kilowatts")
-
-        print("\nEnergy Analogies:")
-        kwh = await graphiti.get_node_by_label_and_name("Unit", "kilowatt_hour")
-        if kwh:
-            analogies = await graphiti.get_relationships(
-                source=kwh,
-                relationship_type="HAS_ANALOGY"
-            )
-            for analogy in analogies:
-                analogy_node = await graphiti.get_node_by_id(analogy.target_id)
-                if analogy_node:
-                    print(f"1 kWh is like: {analogy_node.properties['human_readable']}")
-
-        print("\nCost Information:")
-        kwh = await graphiti.get_node_by_label_and_name("Unit", "kilowatt_hour")
-        cost = await graphiti.get_node_by_label_and_name("Cost", "nyc_electricity_rate")
-        if kwh and cost:
-            relationship = await graphiti.get_relationship(
-                source=kwh,
-                target=cost,
-                relationship_type="HAS_COST"
-            )
-            if relationship:
-                print(f"1 kWh costs: ${relationship.properties['rate']} in NYC")
-
-        print("\nEnergy Saving Tips:")
-        for i in range(4, 8):  # Indexes 4-7 contain appliance-specific tips
-            episode = await graphiti.get_episode_by_name(f'Energy Calculator Episode {i}')
-            if episode:
-                print(f"\n{episode.content['appliance']} Tips:")
-                for tip in episode.content['tips']:
-                    print(f"- {tip}")
+        try:
+            print("\nCleaning up resources...")
+            await graphiti.close()
+            print("Connection closed successfully!")
+        except Exception as cleanup_error:
+            logger.error(f"Error during cleanup: {str(cleanup_error)}")
+            print(f"Error during cleanup: {str(cleanup_error)}")
 
     except Exception as e:
         logger.error(f"Error during graph initialization: {str(e)}")
